@@ -1,0 +1,43 @@
+@PanoProxy_HostAddress = http://localhost:5294
+
+GET {{PanoProxy_HostAddress}}/recorder/state?remoteRecorderId=84e7ea49-ca36-419a-a4f0-b37f00cff123
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
+
+###
+
+GET {{PanoProxy_HostAddress}}/recorder/sessions?remoteRecorderId=84e7ea49-ca36-419a-a4f0-b37f00cff123&startDate=2025-11-01T00:00:00Z&endDate=2025-12-31T23:59:59Z
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
+
+###
+
+POST {{PanoProxy_HostAddress}}/session/update-time?sessionId=00000000-0000-0000-0000-000000000000&newStartTime=2025-11-28T10:00:00Z&newEndTime=2025-11-28T12:00:00Z
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
+
+###
+
+POST {{PanoProxy_HostAddress}}/session/stop?sessionId=00000000-0000-0000-0000-000000000000
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
+
+###
+
+POST {{PanoProxy_HostAddress}}/session/pause?sessionId=00000000-0000-0000-0000-000000000000
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
+
+###
+
+POST {{PanoProxy_HostAddress}}/session/resume?sessionId=00000000-0000-0000-0000-000000000000&pauseId=00000000-0000-0000-0000-000000000000&pauseStartTime=2025-11-28T10:00:00Z
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
+
+###
+
+POST {{PanoProxy_HostAddress}}/session/start?sessionId=00000000-0000-0000-0000-000000000000
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
+
+###

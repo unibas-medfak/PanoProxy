@@ -1,0 +1,20 @@
+{
+  "providerId": "Microsoft.Tools.ServiceModel.Svcutil",
+  "version": "2.1.0",
+  "ExtendedData": {
+    "inputs": [
+      "https://unibas-test.cloud.panopto.eu/Panopto/PublicAPI/4.6/Auth.svc?wsdl"
+    ],
+    "namespaceMappings": [
+      "*, PanoProxy.Auth"
+    ],
+    "outputFile": "Auth.cs",
+    "references": [
+      "Microsoft.AspNetCore.OpenApi, {Microsoft.AspNetCore.OpenApi, 10.0.0}",
+      "Microsoft.OpenApi, {Microsoft.OpenApi, 2.0.0}"
+    ],
+    "sync": true,
+    "targetFramework": "net10.0",
+    "typeReuseMode": "All"
+  }
+}
