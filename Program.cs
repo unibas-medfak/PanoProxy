@@ -6,6 +6,22 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+// Register PanoptoApiClient as a singleton
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var config = serviceProvider.GetRequiredService<IConfiguration>();
+    var hostname = config["Panopto:Hostname"];
+    var username = config["Panopto:Username"];
+    var password = config["Panopto:Password"];
+
+    if (string.IsNullOrEmpty(hostname) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+    {
+        throw new InvalidOperationException("Panopto configuration is missing or incomplete. Please configure Panopto:Hostname, Panopto:Username, and Panopto:Password.");
+    }
+
+    return new PanoptoApiClient(hostname, username, password);
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -16,25 +32,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.MapGet("/recorder/state", async (Guid remoteRecorderId, IConfiguration config) =>
+app.MapGet("/recorder/state", async (Guid remoteRecorderId, PanoptoApiClient client) =>
     {
-        var hostname = config["Panopto:Hostname"];
-        var username = config["Panopto:Username"];
-        var password = config["Panopto:Password"];
-
-        if (string.IsNullOrEmpty(hostname) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-        {
-            return Results.BadRequest(new { error = "Panopto configuration is missing or incomplete" });
-        }
-
-        using var client = new PanoptoApiClient(hostname);
-
-        var loginSuccess = await client.LoginAsync(username, password);
-        if (!loginSuccess)
-        {
-            return Results.Unauthorized();
-        }
-
         var state = await client.GetRemoteRecorderStateAsync(remoteRecorderId);
 
         return Results.Ok(new { remoteRecorderId, state });
@@ -42,25 +41,8 @@ app.MapGet("/recorder/state", async (Guid remoteRecorderId, IConfiguration confi
     .WithName("GetRemoteRecorderState")
     .AddEndpointFilter<BasicAuthFilter>();
 
-app.MapGet("/recorder/sessions", async (Guid remoteRecorderId, DateTime startDate, DateTime endDate, IConfiguration config) =>
+app.MapGet("/recorder/sessions", async (Guid remoteRecorderId, DateTime startDate, DateTime endDate, PanoptoApiClient client) =>
     {
-        var hostname = config["Panopto:Hostname"];
-        var username = config["Panopto:Username"];
-        var password = config["Panopto:Password"];
-
-        if (string.IsNullOrEmpty(hostname) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-        {
-            return Results.BadRequest(new { error = "Panopto configuration is missing or incomplete" });
-        }
-
-        using var client = new PanoptoApiClient(hostname);
-
-        var loginSuccess = await client.LoginAsync(username, password);
-        if (!loginSuccess)
-        {
-            return Results.Unauthorized();
-        }
-
         var sessions = await client.GetSessionsListAsync(remoteRecorderId, startDate, endDate);
 
         return Results.Ok(new { remoteRecorderId, startDate, endDate, sessionCount = sessions.Count, sessions });
@@ -68,25 +50,8 @@ app.MapGet("/recorder/sessions", async (Guid remoteRecorderId, DateTime startDat
     .WithName("GetSessionsList")
     .AddEndpointFilter<BasicAuthFilter>();
 
-app.MapPost("/session/update-time", async (Guid sessionId, DateTime newStartTime, DateTime newEndTime, IConfiguration config) =>
+app.MapPost("/session/update-time", async (Guid sessionId, DateTime newStartTime, DateTime newEndTime, PanoptoApiClient client) =>
     {
-        var hostname = config["Panopto:Hostname"];
-        var username = config["Panopto:Username"];
-        var password = config["Panopto:Password"];
-
-        if (string.IsNullOrEmpty(hostname) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-        {
-            return Results.BadRequest(new { error = "Panopto configuration is missing or incomplete" });
-        }
-
-        using var client = new PanoptoApiClient(hostname);
-
-        var loginSuccess = await client.LoginAsync(username, password);
-        if (!loginSuccess)
-        {
-            return Results.Unauthorized();
-        }
-
         var success = await client.UpdateSessionTimeAsync(sessionId, newStartTime, newEndTime);
 
         if (success)
@@ -101,25 +66,8 @@ app.MapPost("/session/update-time", async (Guid sessionId, DateTime newStartTime
     .WithName("UpdateSessionTime")
     .AddEndpointFilter<BasicAuthFilter>();
 
-app.MapPost("/session/start", async (Guid sessionId, IConfiguration config) =>
+app.MapPost("/session/start", async (Guid sessionId, PanoptoApiClient client) =>
     {
-        var hostname = config["Panopto:Hostname"];
-        var username = config["Panopto:Username"];
-        var password = config["Panopto:Password"];
-
-        if (string.IsNullOrEmpty(hostname) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-        {
-            return Results.BadRequest(new { error = "Panopto configuration is missing or incomplete" });
-        }
-
-        using var client = new PanoptoApiClient(hostname);
-
-        var loginSuccess = await client.LoginAsync(username, password);
-        if (!loginSuccess)
-        {
-            return Results.Unauthorized();
-        }
-
         var sessions = await client.GetSessionDetailsAsync(new[] { sessionId });
         if (sessions == null || sessions.Count == 0)
         {
@@ -144,25 +92,8 @@ app.MapPost("/session/start", async (Guid sessionId, IConfiguration config) =>
     .WithName("StartSession")
     .AddEndpointFilter<BasicAuthFilter>();
 
-app.MapPost("/session/pause", async (Guid sessionId, IConfiguration config) =>
+app.MapPost("/session/pause", async (Guid sessionId, PanoptoApiClient client) =>
     {
-        var hostname = config["Panopto:Hostname"];
-        var username = config["Panopto:Username"];
-        var password = config["Panopto:Password"];
-
-        if (string.IsNullOrEmpty(hostname) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-        {
-            return Results.BadRequest(new { error = "Panopto configuration is missing or incomplete" });
-        }
-
-        using var client = new PanoptoApiClient(hostname);
-
-        var loginSuccess = await client.LoginAsync(username, password);
-        if (!loginSuccess)
-        {
-            return Results.Unauthorized();
-        }
-
         var pauseId = await client.PauseSessionAsync(sessionId);
 
         if (pauseId.HasValue)
@@ -177,25 +108,8 @@ app.MapPost("/session/pause", async (Guid sessionId, IConfiguration config) =>
     .WithName("PauseSession")
     .AddEndpointFilter<BasicAuthFilter>();
 
-app.MapPost("/session/resume", async (Guid sessionId, Guid pauseId, DateTime pauseStartTime, IConfiguration config) =>
+app.MapPost("/session/resume", async (Guid sessionId, Guid pauseId, DateTime pauseStartTime, PanoptoApiClient client) =>
     {
-        var hostname = config["Panopto:Hostname"];
-        var username = config["Panopto:Username"];
-        var password = config["Panopto:Password"];
-
-        if (string.IsNullOrEmpty(hostname) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-        {
-            return Results.BadRequest(new { error = "Panopto configuration is missing or incomplete" });
-        }
-
-        using var client = new PanoptoApiClient(hostname);
-
-        var loginSuccess = await client.LoginAsync(username, password);
-        if (!loginSuccess)
-        {
-            return Results.Unauthorized();
-        }
-
         var durationSeconds = (int)Math.Max(1, (DateTime.UtcNow - pauseStartTime).TotalSeconds);
 
         var success = await client.UpdatePauseDurationAsync(sessionId, pauseId, durationSeconds);
@@ -212,25 +126,8 @@ app.MapPost("/session/resume", async (Guid sessionId, Guid pauseId, DateTime pau
     .WithName("ResumeSession")
     .AddEndpointFilter<BasicAuthFilter>();
 
-app.MapPost("/session/stop", async (Guid sessionId, IConfiguration config) =>
+app.MapPost("/session/stop", async (Guid sessionId, PanoptoApiClient client) =>
     {
-        var hostname = config["Panopto:Hostname"];
-        var username = config["Panopto:Username"];
-        var password = config["Panopto:Password"];
-
-        if (string.IsNullOrEmpty(hostname) || string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-        {
-            return Results.BadRequest(new { error = "Panopto configuration is missing or incomplete" });
-        }
-
-        using var client = new PanoptoApiClient(hostname);
-
-        var loginSuccess = await client.LoginAsync(username, password);
-        if (!loginSuccess)
-        {
-            return Results.Unauthorized();
-        }
-
         var sessions = await client.GetSessionDetailsAsync(new[] { sessionId });
         if (sessions == null || sessions.Count == 0)
         {

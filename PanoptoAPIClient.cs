@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Headers;
 using System.ServiceModel;
 using System.ServiceModel.Channels;
@@ -17,6 +17,8 @@ namespace PanoProxy
         private readonly string _panoptoBaseUrl;
         private readonly CookieContainer _cookieContainer;
         private readonly HttpClient _httpClient;
+        private readonly string _username;
+        private readonly string _password;
 
         private AuthClient _authClient;
         private RemoteRecorderManagementClient _recorderManagementClient;
@@ -24,17 +26,25 @@ namespace PanoProxy
 
         private Auth.AuthenticationInfo _soapAuthInfo;
         private bool _isDisposed;
+        private bool _isLoggedIn;
+        private readonly SemaphoreSlim _loginLock = new SemaphoreSlim(1, 1);
 
-        public PanoptoApiClient(string panoptoHostname)
+        public PanoptoApiClient(string panoptoHostname, string username, string password)
         {
             if (string.IsNullOrWhiteSpace(panoptoHostname))
                 throw new ArgumentNullException(nameof(panoptoHostname));
+            if (string.IsNullOrWhiteSpace(username))
+                throw new ArgumentNullException(nameof(username));
+            if (string.IsNullOrWhiteSpace(password))
+                throw new ArgumentNullException(nameof(password));
 
             _panoptoBaseUrl = panoptoHostname.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                               panoptoHostname.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
                 ? panoptoHostname
                 : $"https://{panoptoHostname}";
 
+            _username = username;
+            _password = password;
             _cookieContainer = new CookieContainer();
 
             var soapBinding = new BasicHttpBinding(BasicHttpSecurityMode.Transport)
@@ -69,7 +79,26 @@ namespace PanoProxy
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         }
 
-        public async Task<bool> LoginAsync(string username, string password)
+        public async Task<bool> EnsureLoggedInAsync()
+        {
+            if (_isLoggedIn)
+                return true;
+
+            await _loginLock.WaitAsync();
+            try
+            {
+                if (_isLoggedIn)
+                    return true;
+
+                return await LoginInternalAsync();
+            }
+            finally
+            {
+                _loginLock.Release();
+            }
+        }
+
+        private async Task<bool> LoginInternalAsync()
         {
             return await Task.Run(() =>
             {
@@ -79,7 +108,7 @@ namespace PanoProxy
                     Uri serviceUri = _authClient.Endpoint.Address.Uri;
                     using (OperationContextScope scope = new OperationContextScope(_authClient.InnerChannel))
                     {
-                        _authClient.LogOnWithPassword(username, password);
+                        _authClient.LogOnWithPassword(_username, _password);
                         MessageProperties properties = OperationContext.Current.IncomingMessageProperties;
                         HttpResponseMessageProperty httpResponse = properties[HttpResponseMessageProperty.Name] as HttpResponseMessageProperty;
 
@@ -95,17 +124,24 @@ namespace PanoProxy
                         }
                         else { Console.WriteLine("Login: HttpResponseMessageProperty not found. Cannot retrieve cookies from WCF response."); }
                     }
-                    _soapAuthInfo = new Auth.AuthenticationInfo() { UserKey = username, Password = password };
+                    _soapAuthInfo = new Auth.AuthenticationInfo() { UserKey = _username, Password = _password };
+                    _isLoggedIn = true;
                     Console.WriteLine("SOAP Login successful. _soapAuthInfo populated.");
                     return true;
                 }
-                catch (FaultException faultEx) { Console.WriteLine($"SOAP Fault during Login: {faultEx.ToString()}"); return false; }
-                catch (Exception ex) { Console.WriteLine($"Error during SOAP Login or cookie processing: {ex.ToString()}"); return false; }
+                catch (FaultException faultEx) { Console.WriteLine($"SOAP Fault during Login: {faultEx.ToString()}"); _isLoggedIn = false; return false; }
+                catch (Exception ex) { Console.WriteLine($"Error during SOAP Login or cookie processing: {ex.ToString()}"); _isLoggedIn = false; return false; }
             });
         }
 
         public async Task<string> GetRemoteRecorderStateAsync(Guid remoteRecorderId)
         {
+            if (!await EnsureLoggedInAsync())
+            {
+                Console.WriteLine("GetRemoteRecorderStateAsync Error: Login failed.");
+                return "Error: Not logged in";
+            }
+
             if (_recorderManagementClient == null || _soapAuthInfo == null) { Console.WriteLine("GetRemoteRecorderStateAsync Error: Client or AuthInfo not ready."); return "Error: Client not ready"; }
             return await Task.Run(() => {
                 try
@@ -121,6 +157,12 @@ namespace PanoProxy
 
         public async Task<List<Session>> GetSessionsListAsync(Guid remoteRecorderId, DateTime startDate, DateTime endDate)
         {
+            if (!await EnsureLoggedInAsync())
+            {
+                Console.WriteLine("GetSessionsListAsync Error: Login failed.");
+                return new List<Session>();
+            }
+
             if (_recorderManagementClient == null || _soapAuthInfo == null)
             {
                 Console.WriteLine("GetSessionsListAsync Error: Client or AuthInfo not ready.");
@@ -157,6 +199,12 @@ namespace PanoProxy
 
         public async Task<List<Session>> GetSessionDetailsAsync(Guid[] sessionIds)
         {
+            if (!await EnsureLoggedInAsync())
+            {
+                Console.WriteLine("GetSessionDetailsAsync Error: Login failed.");
+                return null;
+            }
+
             if (_sessionsClient == null || _soapAuthInfo == null) { Console.WriteLine("GetSessionDetailsAsync Error: Client or AuthInfo not ready."); return null; }
             return await Task.Run(() => {
                 try
@@ -172,6 +220,12 @@ namespace PanoProxy
 
         public async Task<bool> UpdateSessionTimeAsync(Guid sessionId, DateTime newStartTime, DateTime newEndTime)
         {
+            if (!await EnsureLoggedInAsync())
+            {
+                Console.WriteLine("UpdateSessionTimeAsync Error: Login failed.");
+                return false;
+            }
+
             // This method uses _recorderManagementClient.UpdateRecordingTime.
             // It's more general than just updating end time.
             if (_recorderManagementClient == null || _soapAuthInfo == null) { Console.WriteLine("UpdateSessionTimeAsync Error: RRClient or AuthInfo not ready."); return false; }
@@ -190,6 +244,12 @@ namespace PanoProxy
         // --- REST API Methods ---
         public async Task<Guid?> GetInternalSessionIdAsync(Guid deliveryId)
         {
+            if (!await EnsureLoggedInAsync())
+            {
+                Console.WriteLine("GetInternalSessionIdAsync Error: Login failed.");
+                return null;
+            }
+
             if (_httpClient == null) { Console.WriteLine("GetInternalSessionIdAsync: HttpClient not initialized."); return null; }
             try
             {
@@ -206,6 +266,12 @@ namespace PanoProxy
 
         public async Task<Guid?> PauseSessionAsync(Guid internalSessionId)
         {
+            if (!await EnsureLoggedInAsync())
+            {
+                Console.WriteLine("PauseSessionAsync Error: Login failed.");
+                return null;
+            }
+
             if (_httpClient == null) { Console.WriteLine("PauseSessionAsync: HttpClient not initialized."); return null; }
             try
             {
@@ -223,6 +289,12 @@ namespace PanoProxy
 
         public async Task<bool> UpdatePauseDurationAsync(Guid internalSessionId, Guid pauseId, int durationSeconds)
         {
+            if (!await EnsureLoggedInAsync())
+            {
+                Console.WriteLine("UpdatePauseDurationAsync Error: Login failed.");
+                return false;
+            }
+
             if (_httpClient == null) { Console.WriteLine("UpdatePauseDurationAsync: HttpClient not initialized."); return false; }
             try
             {
@@ -247,6 +319,7 @@ namespace PanoProxy
             if (disposing)
             {
                 _httpClient?.Dispose();
+                _loginLock?.Dispose();
                 Action<object> closeClient = (clientObj) => {
                     if (clientObj is ICommunicationObject commObj)
                     {
