@@ -14,20 +14,19 @@ namespace PanoProxy
 
     public class PanoptoApiClient : IDisposable
     {
-        private readonly string _panoptoBaseUrl;
         private readonly CookieContainer _cookieContainer;
         private readonly HttpClient _httpClient;
         private readonly string _username;
         private readonly string _password;
 
-        private AuthClient _authClient;
-        private RemoteRecorderManagementClient _recorderManagementClient;
-        private SessionManagementClient _sessionsClient;
+        private readonly AuthClient _authClient;
+        private readonly RemoteRecorderManagementClient _recorderManagementClient;
+        private readonly SessionManagementClient _sessionsClient;
 
-        private Auth.AuthenticationInfo _soapAuthInfo;
+        private Auth.AuthenticationInfo? _soapAuthInfo;
         private bool _isDisposed;
         private bool _isLoggedIn;
-        private readonly SemaphoreSlim _loginLock = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _loginLock = new (1, 1);
 
         public PanoptoApiClient(string panoptoHostname, string username, string password)
         {
@@ -38,7 +37,7 @@ namespace PanoProxy
             if (string.IsNullOrWhiteSpace(password))
                 throw new ArgumentNullException(nameof(password));
 
-            _panoptoBaseUrl = panoptoHostname.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            var panoptoBaseUrl = panoptoHostname.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
                               panoptoHostname.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
                 ? panoptoHostname
                 : $"https://{panoptoHostname}";
@@ -57,10 +56,9 @@ namespace PanoProxy
 
             try
             {
-                // Ensure API version in URL (e.g., 4.6) matches your Panopto server
-                _authClient = new AuthClient(soapBinding, new EndpointAddress($"{_panoptoBaseUrl}/Panopto/PublicAPI/4.6/Auth.svc"));
-                _recorderManagementClient = new RemoteRecorderManagementClient(soapBinding, new EndpointAddress($"{_panoptoBaseUrl}/Panopto/PublicAPI/4.6/RemoteRecorderManagement.svc"));
-                _sessionsClient = new SessionManagementClient(soapBinding, new EndpointAddress($"{_panoptoBaseUrl}/Panopto/PublicAPI/4.6/SessionManagement.svc"));
+                _authClient = new AuthClient(soapBinding, new EndpointAddress($"{panoptoBaseUrl}/Panopto/PublicAPI/4.6/Auth.svc"));
+                _recorderManagementClient = new RemoteRecorderManagementClient(soapBinding, new EndpointAddress($"{panoptoBaseUrl}/Panopto/PublicAPI/4.6/RemoteRecorderManagement.svc"));
+                _sessionsClient = new SessionManagementClient(soapBinding, new EndpointAddress($"{panoptoBaseUrl}/Panopto/PublicAPI/4.6/SessionManagement.svc"));
             }
             catch (Exception ex)
             {
@@ -74,12 +72,12 @@ namespace PanoProxy
                 UseCookies = true,
                 AllowAutoRedirect = true,
             };
-            _httpClient = new HttpClient(handler) { BaseAddress = new Uri(_panoptoBaseUrl) };
+            _httpClient = new HttpClient(handler) { BaseAddress = new Uri(panoptoBaseUrl) };
             _httpClient.DefaultRequestHeaders.Accept.Clear();
             _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         }
 
-        public async Task<bool> EnsureLoggedInAsync()
+        private async Task<bool> EnsureLoggedInAsync()
         {
             if (_isLoggedIn)
                 return true;
@@ -102,7 +100,6 @@ namespace PanoProxy
         {
             return await Task.Run(() =>
             {
-                if (_authClient == null) { Console.WriteLine("Login Error: _authClient is not initialized."); return false; }
                 try
                 {
                     Uri serviceUri = _authClient.Endpoint.Address.Uri;
@@ -110,11 +107,11 @@ namespace PanoProxy
                     {
                         _authClient.LogOnWithPassword(_username, _password);
                         MessageProperties properties = OperationContext.Current.IncomingMessageProperties;
-                        HttpResponseMessageProperty httpResponse = properties[HttpResponseMessageProperty.Name] as HttpResponseMessageProperty;
+                        HttpResponseMessageProperty? httpResponse = properties[HttpResponseMessageProperty.Name] as HttpResponseMessageProperty;
 
                         if (httpResponse != null)
                         {
-                            string setCookieHeader = httpResponse.Headers[HttpResponseHeader.SetCookie];
+                            string? setCookieHeader = httpResponse.Headers[HttpResponseHeader.SetCookie];
                             if (!string.IsNullOrEmpty(setCookieHeader))
                             {
                                 _cookieContainer.SetCookies(serviceUri, setCookieHeader);
@@ -142,7 +139,7 @@ namespace PanoProxy
                 return "Error: Not logged in";
             }
 
-            if (_recorderManagementClient == null || _soapAuthInfo == null) { Console.WriteLine("GetRemoteRecorderStateAsync Error: Client or AuthInfo not ready."); return "Error: Client not ready"; }
+            if (_soapAuthInfo == null) { Console.WriteLine("GetRemoteRecorderStateAsync Error: Client or AuthInfo not ready."); return "Error: Client not ready"; }
             return await Task.Run(() => {
                 try
                 {
@@ -163,7 +160,7 @@ namespace PanoProxy
                 return new List<Session>();
             }
 
-            if (_recorderManagementClient == null || _soapAuthInfo == null)
+            if (_soapAuthInfo == null)
             {
                 Console.WriteLine("GetSessionsListAsync Error: Client or AuthInfo not ready.");
                 return new List<Session>();
@@ -177,7 +174,7 @@ namespace PanoProxy
                     if (rrResponse.First().ScheduledRecordings.Length > 0 )
                     {
                         var sessions = await GetSessionDetailsAsync(rrResponse.First().ScheduledRecordings);
-                        return sessions;
+                        return sessions ?? new List<Session>();
                     }
                     else
                     {
@@ -197,7 +194,7 @@ namespace PanoProxy
             });
         }
 
-        public async Task<List<Session>> GetSessionDetailsAsync(Guid[] sessionIds)
+        public async Task<List<Session>?> GetSessionDetailsAsync(Guid[] sessionIds)
         {
             if (!await EnsureLoggedInAsync())
             {
@@ -205,7 +202,7 @@ namespace PanoProxy
                 return null;
             }
 
-            if (_sessionsClient == null || _soapAuthInfo == null) { Console.WriteLine("GetSessionDetailsAsync Error: Client or AuthInfo not ready."); return null; }
+            if (_soapAuthInfo == null) { Console.WriteLine("GetSessionDetailsAsync Error: Client or AuthInfo not ready."); return null; }
             return await Task.Run(() => {
                 try
                 {
@@ -228,7 +225,7 @@ namespace PanoProxy
 
             // This method uses _recorderManagementClient.UpdateRecordingTime.
             // It's more general than just updating end time.
-            if (_recorderManagementClient == null || _soapAuthInfo == null) { Console.WriteLine("UpdateSessionTimeAsync Error: RRClient or AuthInfo not ready."); return false; }
+            if (_soapAuthInfo == null) { Console.WriteLine("UpdateSessionTimeAsync Error: RRClient or AuthInfo not ready."); return false; }
             return await Task.Run(() => {
                 try
                 {
@@ -243,7 +240,7 @@ namespace PanoProxy
 
         public async Task<Guid?> CreateRecordingAsync(Guid remoteRecorderId, string sessionName, DateTime startTime, TimeSpan duration, Guid folderId)
         {
-            if (_sessionsClient == null || _recorderManagementClient == null || _soapAuthInfo == null)
+            if (_soapAuthInfo == null)
             {
                 Console.WriteLine("CreateRecordingAsync Error: Client(s) or AuthInfo not ready.");
                 return null;
@@ -287,13 +284,12 @@ namespace PanoProxy
                 return null;
             }
 
-            if (_httpClient == null) { Console.WriteLine("GetInternalSessionIdAsync: HttpClient not initialized."); return null; }
             try
             {
-                string requestUri = $"/Panopto/PublicAPI/4.1/SessionMetadata?deliveryid={deliveryId}";
-                HttpResponseMessage response = await _httpClient.GetAsync(requestUri);
+                var requestUri = $"/Panopto/PublicAPI/4.1/SessionMetadata?deliveryid={deliveryId}";
+                var response = await _httpClient.GetAsync(requestUri);
                 response.EnsureSuccessStatusCode();
-                string responseBody = await response.Content.ReadAsStringAsync();
+                var responseBody = await response.Content.ReadAsStringAsync();
                 var metadata = JsonSerializer.Deserialize<PanoptoSessionMetadata>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 return metadata?.SessionPublicId;
             }
@@ -309,13 +305,12 @@ namespace PanoProxy
                 return null;
             }
 
-            if (_httpClient == null) { Console.WriteLine("PauseSessionAsync: HttpClient not initialized."); return null; }
             try
             {
-                string requestUri = $"/Panopto/PublicAPI/4.1/Pause?sessionId={internalSessionId}";
-                HttpResponseMessage response = await _httpClient.PostAsync(requestUri, null);
+                var requestUri = $"/Panopto/PublicAPI/4.1/Pause?sessionId={internalSessionId}";
+                var response = await _httpClient.PostAsync(requestUri, null);
                 response.EnsureSuccessStatusCode();
-                string responseBody = await response.Content.ReadAsStringAsync();
+                var responseBody = await response.Content.ReadAsStringAsync();
                 if (Guid.TryParse(responseBody.Trim('"'), out Guid pauseId)) return pauseId;
                 Console.WriteLine($"PauseSessionAsync: Could not parse Pause ID from response: {responseBody}");
                 return null;
@@ -332,11 +327,10 @@ namespace PanoProxy
                 return false;
             }
 
-            if (_httpClient == null) { Console.WriteLine("UpdatePauseDurationAsync: HttpClient not initialized."); return false; }
             try
             {
-                string requestUri = $"/Panopto/PublicAPI/4.1/PauseDuration?sessionId={internalSessionId}&pauseId={pauseId}&durationSeconds={durationSeconds}";
-                HttpResponseMessage response = await _httpClient.PostAsync(requestUri, null);
+                var requestUri = $"/Panopto/PublicAPI/4.1/PauseDuration?sessionId={internalSessionId}&pauseId={pauseId}&durationSeconds={durationSeconds}";
+                var response = await _httpClient.PostAsync(requestUri, null);
                 response.EnsureSuccessStatusCode();
                 Console.WriteLine($"UpdatePauseDurationAsync for session {internalSessionId}, pause {pauseId} to {durationSeconds}s successful.");
                 return true;
