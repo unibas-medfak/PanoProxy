@@ -11,7 +11,7 @@ namespace PanoProxy
 {
     // --- Helper Classes for JSON Deserialization ---
     public class PanoptoSessionMetadata { public Guid SessionPublicId { get; set; } }
-    
+
     public class PanoptoApiClient : IDisposable
     {
         private readonly string _panoptoBaseUrl;
@@ -64,7 +64,7 @@ namespace PanoProxy
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"CRITICAL Error initializing SOAP clients: {ex.ToString()}");
+                Console.WriteLine($"CRITICAL Error initializing SOAP clients: {ex}");
                 throw new InvalidOperationException($"Failed to initialize SOAP clients. Check Panopto URL and service availability. Details: {ex.Message}", ex);
             }
 
@@ -129,8 +129,8 @@ namespace PanoProxy
                     Console.WriteLine("SOAP Login successful. _soapAuthInfo populated.");
                     return true;
                 }
-                catch (FaultException faultEx) { Console.WriteLine($"SOAP Fault during Login: {faultEx.ToString()}"); _isLoggedIn = false; return false; }
-                catch (Exception ex) { Console.WriteLine($"Error during SOAP Login or cookie processing: {ex.ToString()}"); _isLoggedIn = false; return false; }
+                catch (FaultException faultEx) { Console.WriteLine($"SOAP Fault during Login: {faultEx}"); _isLoggedIn = false; return false; }
+                catch (Exception ex) { Console.WriteLine($"Error during SOAP Login or cookie processing: {ex}"); _isLoggedIn = false; return false; }
             });
         }
 
@@ -155,7 +155,7 @@ namespace PanoProxy
             });
         }
 
-        public async Task<List<Session>> GetSessionsListAsync(Guid remoteRecorderId, DateTime startDate, DateTime endDate)
+        public async Task<List<Session>> GetSessionsListAsync(Guid remoteRecorderId)
         {
             if (!await EnsureLoggedInAsync())
             {
@@ -172,7 +172,7 @@ namespace PanoProxy
                 try
                 {
                     var authInfoForCall = new RemoteRecorderManagement.AuthenticationInfo { UserKey = _soapAuthInfo.UserKey, Password = _soapAuthInfo.Password };
-                    
+
                     var rrResponse =  _recorderManagementClient.GetRemoteRecordersById(authInfoForCall, new Guid[] { remoteRecorderId });
                     if (rrResponse.First().ScheduledRecordings.Length > 0 )
                     {
@@ -214,7 +214,7 @@ namespace PanoProxy
                     if (sessions != null && sessions.Length > 0) return sessions.ToList();
                     return null;
                 }
-                catch (Exception ex) { Console.WriteLine($"Error GetSessionDetails: {ex.ToString()}"); return null; }
+                catch (Exception ex) { Console.WriteLine($"Error GetSessionDetails: {ex}"); return null; }
             });
         }
 
@@ -237,10 +237,47 @@ namespace PanoProxy
                     Console.WriteLine($"UpdateSessionTimeAsync: Called UpdateRecordingTime for Session {sessionId} to Start: {newStartTime.ToUniversalTime()}, End: {newEndTime.ToUniversalTime()}");
                     return true;
                 }
-                catch (Exception ex) { Console.WriteLine($"Error UpdateSessionTime (via UpdateRecordingTime): {ex.ToString()}"); return false; }
+                catch (Exception ex) { Console.WriteLine($"Error UpdateSessionTime (via UpdateRecordingTime): {ex}"); return false; }
             });
         }
-        
+
+        public async Task<Guid?> CreateRecordingAsync(Guid remoteRecorderId, string sessionName, DateTime startTime, TimeSpan duration, Guid folderId)
+        {
+            if (_sessionsClient == null || _recorderManagementClient == null || _soapAuthInfo == null)
+            {
+                Console.WriteLine("CreateRecordingAsync Error: Client(s) or AuthInfo not ready.");
+                return null;
+            }
+
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    var rrAuth = new RemoteRecorderManagement.AuthenticationInfo { UserKey = _soapAuthInfo.UserKey, Password = _soapAuthInfo.Password };
+
+                    // Step 2: Schedule it on the remote recorders
+                    DateTime endTime = startTime.Add(duration);
+
+                    // The ScheduleRecording method on IRemoteRecorderManagement is typically used.
+                    // It might return a boolean or void.
+                    var response =  _recorderManagementClient.ScheduleRecording(rrAuth, sessionName, folderId, false, startTime, endTime, new RecorderSettings[] { new RecorderSettings { RecorderId = remoteRecorderId } });
+
+                    Console.WriteLine($"CreateRecordingAsync: Scheduled recording for session {response.SessionIDs.FirstOrDefault()} on RR {remoteRecorderId} from {startTime} to {endTime}");
+                    return response.SessionIDs.FirstOrDefault();
+                }
+                catch (FaultException faultEx)
+                {
+                    Console.WriteLine($"SOAP Fault in CreateRecordingAsync: {faultEx}");
+                    return (Guid?)null;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error in CreateRecordingAsync: {ex}");
+                    return (Guid?)null;
+                }
+            });
+        }
+
         // --- REST API Methods ---
         public async Task<Guid?> GetInternalSessionIdAsync(Guid deliveryId)
         {
@@ -261,7 +298,7 @@ namespace PanoProxy
                 return metadata?.SessionPublicId;
             }
             catch (HttpRequestException httpEx) { Console.WriteLine($"HTTP Error GetInternalSessionId:  {httpEx.Message}"); return null; }
-            catch (Exception ex) { Console.WriteLine($"Error GetInternalSessionId: {ex.ToString()}"); return null; }
+            catch (Exception ex) { Console.WriteLine($"Error GetInternalSessionId: {ex}"); return null; }
         }
 
         public async Task<Guid?> PauseSessionAsync(Guid internalSessionId)
@@ -284,7 +321,7 @@ namespace PanoProxy
                 return null;
             }
             catch (HttpRequestException httpEx) { Console.WriteLine($"HTTP Error PauseSession: {httpEx.Message}"); return null; }
-            catch (Exception ex) { Console.WriteLine($"Error PauseSession: {ex.ToString()}"); return null; }
+            catch (Exception ex) { Console.WriteLine($"Error PauseSession: {ex}"); return null; }
         }
 
         public async Task<bool> UpdatePauseDurationAsync(Guid internalSessionId, Guid pauseId, int durationSeconds)
@@ -305,7 +342,7 @@ namespace PanoProxy
                 return true;
             }
             catch (HttpRequestException httpEx) { Console.WriteLine($"HTTP Error UpdatePauseDuration: {httpEx.Message}"); return false; }
-            catch (Exception ex) { Console.WriteLine($"Error UpdatePauseDuration: {ex.ToString()}"); return false; }
+            catch (Exception ex) { Console.WriteLine($"Error UpdatePauseDuration: {ex}"); return false; }
         }
 
         public void Dispose()

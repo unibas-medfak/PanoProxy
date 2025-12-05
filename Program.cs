@@ -41,11 +41,17 @@ app.MapGet("/recorder/state", async (Guid remoteRecorderId, PanoptoApiClient cli
     .WithName("GetRemoteRecorderState")
     .AddEndpointFilter<BasicAuthFilter>();
 
-app.MapGet("/recorder/sessions", async (Guid remoteRecorderId, DateTime startDate, DateTime endDate, PanoptoApiClient client) =>
+app.MapGet("/recorder/sessions", async (Guid remoteRecorderId, PanoptoApiClient client) =>
     {
-        var sessions = await client.GetSessionsListAsync(remoteRecorderId, startDate, endDate);
+        var allSessions = await client.GetSessionsListAsync(remoteRecorderId);
 
-        return Results.Ok(new { remoteRecorderId, startDate, endDate, sessionCount = sessions.Count, sessions });
+        // Filter to only include sessions where startDate = today
+        var today = DateTime.UtcNow.Date;
+        var sessions = allSessions
+            .Where(s => s.StartTime.HasValue && s.StartTime.Value.Date == today)
+            .ToList();
+
+        return Results.Ok(new { remoteRecorderId, sessionCount = sessions.Count, sessions });
     })
     .WithName("GetSessionsList")
     .AddEndpointFilter<BasicAuthFilter>();
@@ -94,7 +100,14 @@ app.MapPost("/session/start", async (Guid sessionId, PanoptoApiClient client) =>
 
 app.MapPost("/session/pause", async (Guid sessionId, PanoptoApiClient client) =>
     {
-        var pauseId = await client.PauseSessionAsync(sessionId);
+        var internalSessionId = await client.GetInternalSessionIdAsync(sessionId);
+
+        if (!internalSessionId.HasValue)
+        {
+            return Results.BadRequest(new { sessionId, success = false, message = "Failed to pause session" });
+        }
+
+        var pauseId = await client.PauseSessionAsync(internalSessionId.Value);
 
         if (pauseId.HasValue)
         {
@@ -110,9 +123,16 @@ app.MapPost("/session/pause", async (Guid sessionId, PanoptoApiClient client) =>
 
 app.MapPost("/session/resume", async (Guid sessionId, Guid pauseId, DateTime pauseStartTime, PanoptoApiClient client) =>
     {
+        var internalSessionId = await client.GetInternalSessionIdAsync(sessionId);
+
+        if (!internalSessionId.HasValue)
+        {
+            return Results.BadRequest(new { sessionId, success = false, message = "Failed to resume session" });
+        }
+
         var durationSeconds = (int)Math.Max(1, (DateTime.UtcNow - pauseStartTime).TotalSeconds);
 
-        var success = await client.UpdatePauseDurationAsync(sessionId, pauseId, durationSeconds);
+        var success = await client.UpdatePauseDurationAsync(internalSessionId.Value, pauseId, durationSeconds);
 
         if (success)
         {
@@ -155,6 +175,28 @@ app.MapPost("/session/stop", async (Guid sessionId, PanoptoApiClient client) =>
         }
     })
     .WithName("StopSession")
+    .AddEndpointFilter<BasicAuthFilter>();
+
+app.MapPost("/session/create", async (Guid remoteRecorderId, string sessionName, DateTime startTime, TimeSpan duration, PanoptoApiClient client, IConfiguration config) =>
+    {
+        var folderIdString = config["Panopto:DefaultFolder"];
+        if (string.IsNullOrEmpty(folderIdString) || !Guid.TryParse(folderIdString, out Guid folderId))
+        {
+            return Results.BadRequest(new { success = false, message = "Panopto:DefaultFolder is not configured or invalid in appsettings" });
+        }
+
+        var sessionId = await client.CreateRecordingAsync(remoteRecorderId, sessionName, startTime, duration, folderId);
+
+        if (sessionId.HasValue)
+        {
+            return Results.Ok(new { sessionId = sessionId.Value, remoteRecorderId, sessionName, startTime, endTime = startTime.Add(duration), folderId, success = true, message = "Recording created successfully" });
+        }
+        else
+        {
+            return Results.BadRequest(new { remoteRecorderId, sessionName, success = false, message = "Failed to create recording" });
+        }
+    })
+    .WithName("CreateRecording")
     .AddEndpointFilter<BasicAuthFilter>();
 
 app.Run();

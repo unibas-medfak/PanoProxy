@@ -1,12 +1,12 @@
 @PanoProxy_HostAddress = http://localhost:5294
 
-GET {{PanoProxy_HostAddress}}/recorder/state?remoteRecorderId=84e7ea49-ca36-419a-a4f0-b37f00cff123
+GET {{PanoProxy_HostAddress}}/recorder/state?remoteRecorderId=00000000-0000-0000-0000-000000000000
 Accept: application/json
 Authorization: Basic YWRtaW46YWRtaW4=
 
 ###
 
-GET {{PanoProxy_HostAddress}}/recorder/sessions?remoteRecorderId=84e7ea49-ca36-419a-a4f0-b37f00cff123&startDate=2025-11-01T00:00:00Z&endDate=2025-12-31T23:59:59Z
+GET {{PanoProxy_HostAddress}}/recorder/sessions?remoteRecorderId=00000000-0000-0000-0000-000000000000
 Accept: application/json
 Authorization: Basic YWRtaW46YWRtaW4=
 
@@ -30,7 +30,7 @@ Authorization: Basic YWRtaW46YWRtaW4=
 
 ###
 
-POST {{PanoProxy_HostAddress}}/session/resume?sessionId=00000000-0000-0000-0000-000000000000&pauseId=00000000-0000-0000-0000-000000000000&pauseStartTime=2025-11-28T10:00:00Z
+POST {{PanoProxy_HostAddress}}/session/resume?sessionId=00000000-0000-0000-0000-000000000000&pauseId=00000000-0000-0000-0000-000000000000&pauseStartTime=2025-12-05T10:58:15Z
 Accept: application/json
 Authorization: Basic YWRtaW46YWRtaW4=
 
@@ -41,3 +41,7 @@ Accept: application/json
 Authorization: Basic YWRtaW46YWRtaW4=
 
 ###
+
+POST {{PanoProxy_HostAddress}}/session/create?remoteRecorderId=00000000-0000-0000-0000-000000000000&sessionName=ProxyTest3&startTime=2025-12-05T08:00:00Z&duration=00:05:00
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
