@@ -1,6 +1,14 @@
 using PanoProxy;
+using Serilog;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.Console()
+    .WriteTo.File("/app/logs/panoproxy-.log", rollingInterval: RollingInterval.Day)
+    .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog();
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
@@ -34,6 +42,7 @@ app.UseHttpsRedirection();
 
 app.MapGet("/recorder/state", async (Guid remoteRecorderId, PanoptoApiClient client) =>
     {
+        Log.Debug("Getting remote recorder state for {RemoteRecorderId}", remoteRecorderId);
         var state = await client.GetRemoteRecorderStateAsync(remoteRecorderId);
 
         return Results.Ok(new { remoteRecorderId, state });
@@ -43,6 +52,7 @@ app.MapGet("/recorder/state", async (Guid remoteRecorderId, PanoptoApiClient cli
 
 app.MapGet("/recorder/sessions", async (Guid remoteRecorderId, PanoptoApiClient client) =>
     {
+        Log.Debug("Getting sessions list for recorder {RemoteRecorderId}", remoteRecorderId);
         var allSessions = await client.GetSessionsListAsync(remoteRecorderId);
 
         // Filter to only include sessions where startDate = today
@@ -51,6 +61,7 @@ app.MapGet("/recorder/sessions", async (Guid remoteRecorderId, PanoptoApiClient 
             .Where(s => s.StartTime.HasValue && s.StartTime.Value.Date == today)
             .ToList();
 
+        Log.Information("Found {SessionCount} sessions for today for recorder {RemoteRecorderId}", sessions.Count, remoteRecorderId);
         return Results.Ok(new { remoteRecorderId, sessionCount = sessions.Count, sessions });
     })
     .WithName("GetSessionsList")
@@ -58,14 +69,17 @@ app.MapGet("/recorder/sessions", async (Guid remoteRecorderId, PanoptoApiClient 
 
 app.MapPost("/session/update-time", async (Guid sessionId, DateTime newStartTime, DateTime newEndTime, PanoptoApiClient client) =>
     {
+        Log.Information("Updating session time for {SessionId}: {NewStartTime} to {NewEndTime}", sessionId, newStartTime, newEndTime);
         var success = await client.UpdateSessionTimeAsync(sessionId, newStartTime, newEndTime);
 
         if (success)
         {
+            Log.Information("Successfully updated session time for {SessionId}", sessionId);
             return Results.Ok(new { sessionId, newStartTime, newEndTime, success = true, message = "Session time updated successfully" });
         }
         else
         {
+            Log.Warning("Failed to update session time for {SessionId}", sessionId);
             return Results.BadRequest(new { sessionId, success = false, message = "Failed to update session time" });
         }
     })
@@ -74,24 +88,31 @@ app.MapPost("/session/update-time", async (Guid sessionId, DateTime newStartTime
 
 app.MapPost("/session/start", async (Guid sessionId, PanoptoApiClient client) =>
     {
+        Log.Information("Starting session {SessionId}", sessionId);
         var sessions = await client.GetSessionDetailsAsync(new[] { sessionId });
         if (sessions == null || sessions.Count == 0)
         {
+            Log.Warning("Session {SessionId} not found", sessionId);
             return Results.NotFound(new { sessionId, success = false, message = "Session not found" });
         }
 
         var session = sessions[0];
         var newStartTime = DateTime.UtcNow;
-        var newEndTime = newStartTime.AddSeconds(session.Duration.GetValueOrDefault(3600)); // Default 1hr if duration missing
+
+        // TODO: do we keep duration or endTime?
+        var newEndTime = session.StartTime.Value.AddSeconds(session.Duration.GetValueOrDefault(3600));
+        //var newEndTime = newStartTime.AddSeconds(session.Duration.GetValueOrDefault(3600)); // Default 1hr if duration missing
 
         var success = await client.UpdateSessionTimeAsync(sessionId, newStartTime, newEndTime);
 
         if (success)
         {
+            Log.Information("Successfully started session {SessionId} at {NewStartTime}", sessionId, newStartTime);
             return Results.Ok(new { sessionId, originalStartTime = session.StartTime, newStartTime, endTime = newEndTime, success = true, message = "Session started successfully" });
         }
         else
         {
+            Log.Warning("Failed to start session {SessionId}", sessionId);
             return Results.BadRequest(new { sessionId, success = false, message = "Failed to start session" });
         }
     })
@@ -100,10 +121,12 @@ app.MapPost("/session/start", async (Guid sessionId, PanoptoApiClient client) =>
 
 app.MapPost("/session/pause", async (Guid sessionId, PanoptoApiClient client) =>
     {
+        Log.Information("Pausing session {SessionId}", sessionId);
         var internalSessionId = await client.GetInternalSessionIdAsync(sessionId);
 
         if (!internalSessionId.HasValue)
         {
+            Log.Warning("Failed to get internal session ID for {SessionId}", sessionId);
             return Results.BadRequest(new { sessionId, success = false, message = "Failed to pause session" });
         }
 
@@ -111,10 +134,12 @@ app.MapPost("/session/pause", async (Guid sessionId, PanoptoApiClient client) =>
 
         if (pauseId.HasValue)
         {
+            Log.Information("Successfully paused session {SessionId} with pause ID {PauseId}", sessionId, pauseId.Value);
             return Results.Ok(new { sessionId, pauseId = pauseId.Value, success = true, message = "Session paused successfully" });
         }
         else
         {
+            Log.Warning("Failed to pause session {SessionId}", sessionId);
             return Results.BadRequest(new { sessionId, success = false, message = "Failed to pause session" });
         }
     })
@@ -123,10 +148,12 @@ app.MapPost("/session/pause", async (Guid sessionId, PanoptoApiClient client) =>
 
 app.MapPost("/session/resume", async (Guid sessionId, Guid pauseId, DateTime pauseStartTime, PanoptoApiClient client) =>
     {
+        Log.Information("Resuming session {SessionId} from pause {PauseId}", sessionId, pauseId);
         var internalSessionId = await client.GetInternalSessionIdAsync(sessionId);
 
         if (!internalSessionId.HasValue)
         {
+            Log.Warning("Failed to get internal session ID for {SessionId}", sessionId);
             return Results.BadRequest(new { sessionId, success = false, message = "Failed to resume session" });
         }
 
@@ -136,10 +163,12 @@ app.MapPost("/session/resume", async (Guid sessionId, Guid pauseId, DateTime pau
 
         if (success)
         {
+            Log.Information("Successfully resumed session {SessionId} after {DurationSeconds}s pause", sessionId, durationSeconds);
             return Results.Ok(new { sessionId, pauseId, pauseStartTime, resumeTime = DateTime.UtcNow, durationSeconds, success = true, message = "Session resumed successfully" });
         }
         else
         {
+            Log.Warning("Failed to resume session {SessionId}", sessionId);
             return Results.BadRequest(new { sessionId, pauseId, success = false, message = "Failed to resume session" });
         }
     })
@@ -148,15 +177,18 @@ app.MapPost("/session/resume", async (Guid sessionId, Guid pauseId, DateTime pau
 
 app.MapPost("/session/stop", async (Guid sessionId, PanoptoApiClient client) =>
     {
+        Log.Information("Stopping session {SessionId}", sessionId);
         var sessions = await client.GetSessionDetailsAsync(new[] { sessionId });
         if (sessions == null || sessions.Count == 0)
         {
+            Log.Warning("Session {SessionId} not found", sessionId);
             return Results.NotFound(new { sessionId, success = false, message = "Session not found" });
         }
 
         var session = sessions[0];
         if (!session.StartTime.HasValue)
         {
+            Log.Warning("Session {SessionId} has no start time", sessionId);
             return Results.BadRequest(new { sessionId, success = false, message = "Session start time is not available" });
         }
 
@@ -167,10 +199,12 @@ app.MapPost("/session/stop", async (Guid sessionId, PanoptoApiClient client) =>
 
         if (success)
         {
+            Log.Information("Successfully stopped session {SessionId} at {NewEndTime}", sessionId, newEndTime);
             return Results.Ok(new { sessionId, originalStartTime = currentStartTime, newEndTime, success = true, message = "Session stopped successfully" });
         }
         else
         {
+            Log.Warning("Failed to stop session {SessionId}", sessionId);
             return Results.BadRequest(new { sessionId, success = false, message = "Failed to stop session" });
         }
     })
@@ -179,9 +213,11 @@ app.MapPost("/session/stop", async (Guid sessionId, PanoptoApiClient client) =>
 
 app.MapPost("/session/create", async (Guid remoteRecorderId, string sessionName, DateTime startTime, TimeSpan duration, PanoptoApiClient client, IConfiguration config) =>
     {
+        Log.Information("Creating session {SessionName} for recorder {RemoteRecorderId} at {StartTime}", sessionName, remoteRecorderId, startTime);
         var folderIdString = config["Panopto:DefaultFolder"];
         if (string.IsNullOrEmpty(folderIdString) || !Guid.TryParse(folderIdString, out Guid folderId))
         {
+            Log.Warning("Panopto:DefaultFolder is not configured or invalid");
             return Results.BadRequest(new { success = false, message = "Panopto:DefaultFolder is not configured or invalid in appsettings" });
         }
 
@@ -189,10 +225,12 @@ app.MapPost("/session/create", async (Guid remoteRecorderId, string sessionName,
 
         if (sessionId.HasValue)
         {
+            Log.Information("Successfully created session {SessionId} for recorder {RemoteRecorderId}", sessionId.Value, remoteRecorderId);
             return Results.Ok(new { sessionId = sessionId.Value, remoteRecorderId, sessionName, startTime, endTime = startTime.Add(duration), folderId, success = true, message = "Recording created successfully" });
         }
         else
         {
+            Log.Warning("Failed to create session {SessionName} for recorder {RemoteRecorderId}", sessionName, remoteRecorderId);
             return Results.BadRequest(new { remoteRecorderId, sessionName, success = false, message = "Failed to create recording" });
         }
     })

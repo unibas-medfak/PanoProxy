@@ -265,7 +265,7 @@ namespace PanoProxy
                 catch (FaultException faultEx)
                 {
                     Console.WriteLine($"SOAP Fault in CreateRecordingAsync: {faultEx}");
-                    return (Guid?)null;
+                    return null;
                 }
                 catch (Exception ex)
                 {
