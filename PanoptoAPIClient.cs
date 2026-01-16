@@ -14,6 +14,8 @@ public class PanoptoSessionMetadata { public Guid SessionPublicId { get; init; }
 
 public sealed class PanoptoApiClient : IDisposable
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     private readonly CookieContainer _cookieContainer;
     private readonly HttpClient _httpClient;
     private readonly string _username;
@@ -289,7 +291,7 @@ public sealed class PanoptoApiClient : IDisposable
                     // It might return a boolean or void.
                     var response = _recorderManagementClient.ScheduleRecording(rrAuth, sessionName, folderId, false,
                         startTime, endTime,
-                        [new RecorderSettings() { RecorderId = remoteRecorderId }]);
+                        [new RecorderSettings { RecorderId = remoteRecorderId }]);
 
                     Console.WriteLine(
                         $"CreateRecordingAsync: Scheduled recording for session {response.SessionIDs.FirstOrDefault()} on RR {remoteRecorderId} from {startTime} to {endTime}");
@@ -326,7 +328,7 @@ public sealed class PanoptoApiClient : IDisposable
             var response = await _httpClient.GetAsync(requestUri);
             response.EnsureSuccessStatusCode();
             var responseBody = await response.Content.ReadAsStringAsync();
-            var metadata = JsonSerializer.Deserialize<PanoptoSessionMetadata>(responseBody, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var metadata = JsonSerializer.Deserialize<PanoptoSessionMetadata>(responseBody, JsonOptions);
             return metadata?.SessionPublicId;
         }
         catch (HttpRequestException httpEx) { Console.WriteLine($"HTTP Error GetInternalSessionId: {httpEx.Message}"); return null; }
@@ -377,7 +379,7 @@ public sealed class PanoptoApiClient : IDisposable
 
     public void Dispose()
     {
-        Dispose(true); GC.SuppressFinalize(this);
+        Dispose(true);
     }
 
     private void Dispose(bool disposing)
