@@ -1,6 +1,13 @@
 using PanoProxy;
 using Serilog;
 
+var Recorders = new[]
+{
+    new { name = "Recorder 1", id = Guid.Parse("11111111-1111-1111-1111-111111111111") },
+    new { name = "Recorder 2", id = Guid.Parse("22222222-2222-2222-2222-222222222222") },
+    new { name = "Recorder 3", id = Guid.Parse("33333333-3333-3333-3333-333333333333") }
+};
+
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .WriteTo.Console()
@@ -65,6 +72,29 @@ app.MapGet("/recorder/sessions", async (Guid remoteRecorderId, PanoptoApiClient 
         return Results.Ok(new { remoteRecorderId, sessionCount = sessions.Count, sessions });
     })
     .WithName("GetSessionsList")
+    .AddEndpointFilter<BasicAuthFilter>();
+
+app.MapGet("/sessions", async (PanoptoApiClient client) =>
+    {
+        Log.Debug("Getting sessions list for all recorders");
+        var today = DateTime.UtcNow.Date;
+
+        var tasks = Recorders.Select(async recorder =>
+        {
+            var allSessions = await client.GetSessionsListAsync(recorder.id);
+            var sessions = allSessions
+                .Where(s => s.StartTime.HasValue && s.StartTime.Value.Date == today)
+                .ToList();
+            return new { recorder.id, recorder.name, sessionCount = sessions.Count, sessions };
+        });
+
+        var recorders = await Task.WhenAll(tasks);
+        var totalCount = recorders.Sum(r => r.sessionCount);
+
+        Log.Information("Found {SessionCount} sessions for today across all recorders", totalCount);
+        return Results.Ok(new { totalSessionCount = totalCount, recorders });
+    })
+    .WithName("GetAllSessions")
     .AddEndpointFilter<BasicAuthFilter>();
 
 app.MapPost("/session/update-time", async (Guid sessionId, DateTime newStartTime, DateTime newEndTime, PanoptoApiClient client) =>
@@ -199,6 +229,10 @@ app.MapPost("/session/stop", async (Guid sessionId, PanoptoApiClient client) =>
         return Results.BadRequest(new { sessionId, success = false, message = "Failed to stop session" });
     })
     .WithName("StopSession")
+    .AddEndpointFilter<BasicAuthFilter>();
+
+app.MapGet("/recorders", () => Results.Ok(Recorders))
+    .WithName("GetRecorders")
     .AddEndpointFilter<BasicAuthFilter>();
 
 app.MapPost("/session/create", async (Guid remoteRecorderId, string sessionName, DateTime startTime, TimeSpan duration, PanoptoApiClient client, IConfiguration config) =>
