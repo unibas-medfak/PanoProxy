@@ -10,7 +10,7 @@ using PanoProxy.SessionManagement;
 namespace PanoProxy
 {
     // --- Helper Classes for JSON Deserialization ---
-    public class PanoptoSessionMetadata { public Guid SessionPublicId { get; set; } }
+    public class PanoptoSessionMetadata { public Guid SessionPublicId { get; init; } }
 
     public class PanoptoApiClient : IDisposable
     {
@@ -66,7 +66,7 @@ namespace PanoProxy
                 throw new InvalidOperationException($"Failed to initialize SOAP clients. Check Panopto URL and service availability. Details: {ex.Message}", ex);
             }
 
-            HttpClientHandler handler = new HttpClientHandler
+            var handler = new HttpClientHandler
             {
                 CookieContainer = _cookieContainer,
                 UseCookies = true,
@@ -102,8 +102,8 @@ namespace PanoProxy
             {
                 try
                 {
-                    Uri serviceUri = _authClient.Endpoint.Address.Uri;
-                    using (OperationContextScope scope = new OperationContextScope(_authClient.InnerChannel))
+                    var serviceUri = _authClient.Endpoint.Address.Uri;
+                    using (var scope = new OperationContextScope(_authClient.InnerChannel))
                     {
                         _authClient.LogOnWithPassword(_username, _password);
                         MessageProperties properties = OperationContext.Current.IncomingMessageProperties;
@@ -139,7 +139,12 @@ namespace PanoProxy
                 return "Error: Not logged in";
             }
 
-            if (_soapAuthInfo == null) { Console.WriteLine("GetRemoteRecorderStateAsync Error: Client or AuthInfo not ready."); return "Error: Client not ready"; }
+            if (_soapAuthInfo == null)
+            {
+                Console.WriteLine("GetRemoteRecorderStateAsync Error: Client or AuthInfo not ready.");
+                return "Error: Client not ready";
+            }
+
             return await Task.Run(() => {
                 try
                 {
@@ -165,6 +170,7 @@ namespace PanoProxy
                 Console.WriteLine("GetSessionsListAsync Error: Client or AuthInfo not ready.");
                 return new List<Session>();
             }
+
             return await Task.Run(async () => {
                 try
                 {
@@ -176,10 +182,8 @@ namespace PanoProxy
                         var sessions = await GetSessionDetailsAsync(rrResponse.First().ScheduledRecordings);
                         return sessions ?? new List<Session>();
                     }
-                    else
-                    {
-                        return new List<Session>();
-                    }
+
+                    return new List<Session>();
                 }
                 catch (FaultException faultEx)
                 {
@@ -202,7 +206,12 @@ namespace PanoProxy
                 return null;
             }
 
-            if (_soapAuthInfo == null) { Console.WriteLine("GetSessionDetailsAsync Error: Client or AuthInfo not ready."); return null; }
+            if (_soapAuthInfo == null)
+            {
+                Console.WriteLine("GetSessionDetailsAsync Error: Client or AuthInfo not ready.");
+                return null;
+            }
+
             return await Task.Run(() => {
                 try
                 {
@@ -225,7 +234,12 @@ namespace PanoProxy
 
             // This method uses _recorderManagementClient.UpdateRecordingTime.
             // It's more general than just updating end time.
-            if (_soapAuthInfo == null) { Console.WriteLine("UpdateSessionTimeAsync Error: RRClient or AuthInfo not ready."); return false; }
+            if (_soapAuthInfo == null)
+            {
+                Console.WriteLine("UpdateSessionTimeAsync Error: RRClient or AuthInfo not ready.");
+                return false;
+            }
+
             return await Task.Run(() => {
                 try
                 {
@@ -240,6 +254,12 @@ namespace PanoProxy
 
         public async Task<Guid?> CreateRecordingAsync(Guid remoteRecorderId, string sessionName, DateTime startTime, TimeSpan duration, Guid folderId)
         {
+            if (!await EnsureLoggedInAsync())
+            {
+                Console.WriteLine("UpdateSessionTimeAsync Error: Login failed.");
+                return null;
+            }
+
             if (_soapAuthInfo == null)
             {
                 Console.WriteLine("CreateRecordingAsync Error: Client(s) or AuthInfo not ready.");
