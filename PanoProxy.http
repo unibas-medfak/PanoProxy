@@ -1,5 +1,17 @@
 @PanoProxy_HostAddress = http://localhost:5294
 
+GET {{PanoProxy_HostAddress}}/recorders
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
+
+###
+
+GET {{PanoProxy_HostAddress}}/sessions
+Accept: application/json
+Authorization: Basic YWRtaW46YWRtaW4=
+
+###
+
 GET {{PanoProxy_HostAddress}}/recorder/state?remoteRecorderId=00000000-0000-0000-0000-000000000000
 Accept: application/json
 Authorization: Basic YWRtaW46YWRtaW4=

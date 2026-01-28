@@ -1,13 +1,6 @@
 using PanoProxy;
 using Serilog;
 
-var recorders = new[]
-{
-    new { name = "Recorder 1", id = Guid.Parse("11111111-1111-1111-1111-111111111111") },
-    new { name = "Recorder 2", id = Guid.Parse("22222222-2222-2222-2222-222222222222") },
-    new { name = "Recorder 3", id = Guid.Parse("33333333-3333-3333-3333-333333333333") }
-};
-
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .WriteTo.Console()
@@ -36,6 +29,8 @@ builder.Services.AddSingleton(serviceProvider =>
 
     return new PanoptoApiClient(hostname, username, password);
 });
+
+var recorders = builder.Configuration.GetSection("Recorders").Get<Recorder[]>() ?? [];
 
 var app = builder.Build();
 
@@ -81,11 +76,11 @@ app.MapGet("/sessions", async (PanoptoApiClient client) =>
 
         var tasks = recorders.Select(async recorder =>
         {
-            var allSessions = await client.GetSessionsListAsync(recorder.id);
+            var allSessions = await client.GetSessionsListAsync(recorder.Id);
             var sessions = allSessions
                 .Where(s => s.StartTime.HasValue && s.StartTime.Value.Date == today)
                 .ToList();
-            return new { recorder.id, recorder.name, sessionCount = sessions.Count, sessions };
+            return new { recorder.Id, recorder.Name, sessionCount = sessions.Count, sessions };
         });
 
         var allRecorders = await Task.WhenAll(tasks);
