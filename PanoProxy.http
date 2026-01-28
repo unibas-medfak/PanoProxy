@@ -1,4 +1,4 @@
-@PanoProxy_HostAddress = https://panoproxy.medizin.unibas.ch
+@PanoProxy_HostAddress = http://localhost:5294
 
 GET {{PanoProxy_HostAddress}}/recorder/state?remoteRecorderId=00000000-0000-0000-0000-000000000000
 Accept: application/json
@@ -42,6 +42,8 @@ Authorization: Basic YWRtaW46YWRtaW4=
 
 ###
 
-POST {{PanoProxy_HostAddress}}/session/create?remoteRecorderId=59e1eeff-911a-4e16-addf-b3b000e231bc&sessionName=PanoProxyTest2&startTime=2026-01-16T14:10:00Z&duration=00:05:00
+POST {{PanoProxy_HostAddress}}/session/create?remoteRecorderId=00000000-0000-0000-0000-000000000000&sessionName=Und%20noch%20eine%20Aufname&startTime=2026-01-21T15:20:00Z&duration=00:05:00
 Accept: application/json
-Authorization: Basic YWRtaW46NUJCQ0ZFNEUxQkQ5
+Authorization: Basic YWRtaW46YWRtaW4=
+
+# Disconected, Stopped

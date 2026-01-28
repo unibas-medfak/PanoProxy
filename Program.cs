@@ -1,7 +1,7 @@
 using PanoProxy;
 using Serilog;
 
-var Recorders = new[]
+var recorders = new[]
 {
     new { name = "Recorder 1", id = Guid.Parse("11111111-1111-1111-1111-111111111111") },
     new { name = "Recorder 2", id = Guid.Parse("22222222-2222-2222-2222-222222222222") },
@@ -79,7 +79,7 @@ app.MapGet("/sessions", async (PanoptoApiClient client) =>
         Log.Debug("Getting sessions list for all recorders");
         var today = DateTime.UtcNow.Date;
 
-        var tasks = Recorders.Select(async recorder =>
+        var tasks = recorders.Select(async recorder =>
         {
             var allSessions = await client.GetSessionsListAsync(recorder.id);
             var sessions = allSessions
@@ -88,8 +88,8 @@ app.MapGet("/sessions", async (PanoptoApiClient client) =>
             return new { recorder.id, recorder.name, sessionCount = sessions.Count, sessions };
         });
 
-        var recorders = await Task.WhenAll(tasks);
-        var totalCount = recorders.Sum(r => r.sessionCount);
+        var allRecorders = await Task.WhenAll(tasks);
+        var totalCount = allRecorders.Sum(r => r.sessionCount);
 
         Log.Information("Found {SessionCount} sessions for today across all recorders", totalCount);
         return Results.Ok(new { totalSessionCount = totalCount, recorders });
@@ -231,7 +231,7 @@ app.MapPost("/session/stop", async (Guid sessionId, PanoptoApiClient client) =>
     .WithName("StopSession")
     .AddEndpointFilter<BasicAuthFilter>();
 
-app.MapGet("/recorders", () => Results.Ok(Recorders))
+app.MapGet("/recorders", () => Results.Ok(recorders))
     .WithName("GetRecorders")
     .AddEndpointFilter<BasicAuthFilter>();
 
